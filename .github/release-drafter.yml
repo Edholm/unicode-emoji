@@ -31,6 +31,6 @@ version-resolver:
 exclude-labels:
   - 'skip-changelog'
 template: |
-  ## Changes
+  # v$RESOLVED_VERSION
 
   $CHANGES
