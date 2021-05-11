@@ -34,6 +34,7 @@ func AllEmojis() (emojis []Emoji, err error) {
 
 	emojis, err = downloadAndParseEmojis(url)
 	emojiCache = emojis
+
 	return
 }
 
@@ -45,6 +46,7 @@ func RandomEmoji() (Emoji, error) {
 	}
 
 	rndIndex := rand.Intn(len(emojis))
+
 	return emojis[rndIndex], nil
 }
 
@@ -76,12 +78,11 @@ func downloadAndParseEmojis(url string) ([]Emoji, error) {
 		emojis, err := parseEmoji(line)
 		if err != nil {
 			log.Println(err)
+
 			continue
 		}
 
-		for _, emoji := range emojis {
-			allEmojis = append(allEmojis, emoji)
-		}
+		allEmojis = append(allEmojis, emojis...)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("error reading response: %w", err)
@@ -98,6 +99,7 @@ func parseEmoji(line string) ([]Emoji, error) {
 
 	if !strings.ContainsRune(codePointRange, '.') {
 		runes, err := extractRunes(codePointRange)
+
 		return []Emoji{
 				{
 					Runes: runes,
@@ -116,6 +118,7 @@ func parseEmoji(line string) ([]Emoji, error) {
 			Runes: []rune{r},
 		}
 	}
+
 	return emojis, nil
 }
 
@@ -159,7 +162,7 @@ func expandCodePointRange(cpRange string) ([]rune, error) {
 	current := first
 	for current != end {
 		runes = append(runes, rune(current))
-		current = current + 1
+		current++
 	}
 
 	return runes, nil
