@@ -2,6 +2,7 @@ package emoji
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -21,8 +22,10 @@ func (e Emoji) String() string {
 }
 
 var (
-	url        = "https://www.unicode.org/Public/emoji/13.1/emoji-sequences.txt"
-	emojiCache []Emoji
+	ErrInvalidCodePoint = errors.New("invalid unicode code point")
+	ErrFailedDownload   = errors.New("unable to download emojis")
+	url                 = "https://www.unicode.org/Public/emoji/13.1/emoji-sequences.txt"
+	emojiCache          []Emoji
 )
 
 // AllEmojis returns all available emojis in the unicode specification. It will download and parse them from
@@ -54,7 +57,7 @@ func RandomEmoji() (Emoji, error) {
 func downloadAndParseEmojis(url string) ([]Emoji, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrFailedDownload, err)
 	}
 	defer func() {
 		err := resp.Body.Close()
@@ -64,7 +67,7 @@ func downloadAndParseEmojis(url string) ([]Emoji, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("got %s, expected 200 OK from %q", resp.Status, url)
+		return nil, fmt.Errorf("%w: got %s, expected 200 OK from %q", ErrFailedDownload, resp.Status, url)
 	}
 
 	// 2053 is a magic number and and is the number of emojis in the 13.1 emoji-sequences.txt
@@ -85,7 +88,7 @@ func downloadAndParseEmojis(url string) ([]Emoji, error) {
 		allEmojis = append(allEmojis, emojis...)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading response: %w", err)
+		return nil, fmt.Errorf("%w: error reading response: %v", ErrFailedDownload, err)
 	}
 
 	return allEmojis, nil
@@ -125,7 +128,7 @@ func parseEmoji(line string) ([]Emoji, error) {
 // extractRunes takes a code point string (e.g 00A9 FE0F, but not 1F334..1F335) and returns them parsed as runes
 func extractRunes(codePoints string) ([]rune, error) {
 	if strings.ContainsRune(codePoints, '.') {
-		return nil, fmt.Errorf("code point range not supported yet")
+		return nil, fmt.Errorf("%w: code point range not supported yet", ErrInvalidCodePoint)
 	}
 
 	// E.g. 00A9 FE0F
@@ -134,7 +137,7 @@ func extractRunes(codePoints string) ([]rune, error) {
 	for _, s := range split {
 		codePoint, err := strconv.ParseInt(s, 16, 32)
 		if err != nil {
-			return nil, fmt.Errorf("strconv.ParseInt: %v", err)
+			return nil, fmt.Errorf("%w: strconv.ParseInt: %v", ErrInvalidCodePoint, err)
 		}
 		runes = append(runes, rune(codePoint))
 	}
@@ -146,16 +149,16 @@ func extractRunes(codePoints string) ([]rune, error) {
 func expandCodePointRange(cpRange string) ([]rune, error) {
 	split := strings.Split(cpRange, "..")
 	if len(split) != 2 {
-		return nil, fmt.Errorf("%q does not look like a code point range", cpRange)
+		return nil, fmt.Errorf("%w: %q does not look like a code point range", ErrInvalidCodePoint, cpRange)
 	}
 
 	first, err := strconv.ParseInt(split[0], 16, 32)
 	if err != nil {
-		return nil, fmt.Errorf("%q is not a valid code point: %w", split[0], err)
+		return nil, fmt.Errorf("%w: %q because %v", ErrInvalidCodePoint, split[0], err)
 	}
 	end, err := strconv.ParseInt(split[1], 16, 32)
 	if err != nil {
-		return nil, fmt.Errorf("%q is not a valid code point: %w", split[1], err)
+		return nil, fmt.Errorf("%w: %q because %v", ErrInvalidCodePoint, split[1], err)
 	}
 
 	runes := make([]rune, 0, 10)
