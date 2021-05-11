@@ -70,8 +70,8 @@ func downloadAndParseEmojis(url string) ([]Emoji, error) {
 		return nil, fmt.Errorf("%w: got %s, expected 200 OK from %q", ErrFailedDownload, resp.Status, url)
 	}
 
-	// 2053 is a magic number and and is the number of emojis in the 13.1 emoji-sequences.txt
-	allEmojis := make([]Emoji, 0, 2053)
+	// 2191 is a magic number and and is the number of emojis in the 13.1 emoji-sequences.txt
+	allEmojis := make([]Emoji, 0, 2191)
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -163,7 +163,7 @@ func expandCodePointRange(cpRange string) ([]rune, error) {
 
 	runes := make([]rune, 0, 10)
 	current := first
-	for current != end {
+	for current <= end {
 		runes = append(runes, rune(current))
 		current++
 	}
