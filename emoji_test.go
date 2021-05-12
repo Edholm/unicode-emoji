@@ -264,3 +264,93 @@ func Test_extractNameFromDescription(t *testing.T) {
 		})
 	}
 }
+
+func TestEmojis_Search(t *testing.T) {
+	t.Parallel()
+	emojis := NewEmojis()
+	tests := []struct {
+		name        string
+		query       string
+		wantMatched []Emoji
+		wantErr     bool
+	}{
+		{
+			name:  "poo",
+			query: "poo",
+			wantMatched: []Emoji{
+				{
+					Runes: []rune{'\U0001F4A9'},
+					Name:  "pile of poo",
+				},
+				{
+					Runes: []rune{'\U0001F429'},
+					Name:  "poodle",
+				},
+				{
+					Runes: []rune{'\U0001F963'},
+					Name:  "bowl with spoon",
+				},
+				{
+					Runes: []rune{'\U0001F944'},
+					Name:  "spoon",
+				},
+				{
+					Runes: []rune{'\U0001F3B1'},
+					Name:  "pool 8 ball",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:  "Uppercase Poo",
+			query: "POO",
+			wantMatched: []Emoji{
+				{
+					Runes: []rune{'\U0001F4A9'},
+					Name:  "pile of poo",
+				},
+				{
+					Runes: []rune{'\U0001F429'},
+					Name:  "poodle",
+				},
+				{
+					Runes: []rune{'\U0001F963'},
+					Name:  "bowl with spoon",
+				},
+				{
+					Runes: []rune{'\U0001F944'},
+					Name:  "spoon",
+				},
+				{
+					Runes: []rune{'\U0001F3B1'},
+					Name:  "pool 8 ball",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "Whitespace only",
+			query:       "\t",
+			wantMatched: nil,
+			wantErr:     false,
+		},
+		{
+			name:        "Empty query",
+			query:       "",
+			wantMatched: nil,
+			wantErr:     false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMatched, err := emojis.Search(tt.query)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Search() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotMatched, tt.wantMatched) {
+				t.Errorf("Search() gotMatched = %v, want %v", gotMatched, tt.wantMatched)
+			}
+		})
+	}
+}

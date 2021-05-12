@@ -14,7 +14,8 @@ Running this will also download the required unicode code points from unicode.or
 As for running you can run an example in the `examples` directory:
 
 ```
-go run examples/printer.go
+go run examples/print/printer.go
+go run examples/search/searcher.go
 ```
 
 ## Example usage
@@ -49,6 +50,9 @@ func main() {
 	}
 }
 ```
+
+### Searching for a particular emoji
+See `examples/search/searcher.go` for an example of how that can be done interactively.
 
 ## Emojis!
 😀😃😄😁😆😅🤣😂🙂🙃😉😊😇🥰😍🤩😘😗☺️😚😙🥲😋😛😜🤪😝🤑🤗🤭🤫🤔🤐🤨😐😑😶😶‍🌫️😏😒🙄😬😮‍💨🤥😌😔😪🤤😴😷

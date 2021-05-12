@@ -72,6 +72,27 @@ func (e *Emojis) Random() (Emoji, error) {
 	return emojis[rndIndex], nil
 }
 
+func (e *Emojis) Search(query string) (matched []Emoji, err error) {
+	if strings.TrimSpace(query) == "" {
+		return
+	}
+
+	all, err := e.All()
+	if err != nil {
+		return nil, err
+	}
+
+	query = strings.ToLower(query)
+	for _, emoji := range all {
+		name := strings.ToLower(emoji.Name)
+		if strings.Contains(name, query) {
+			matched = append(matched, emoji)
+		}
+	}
+
+	return
+}
+
 // parseAllEmojis parses the embedded unicode emoji list
 func parseAllEmojis() ([]Emoji, error) {
 	// 3521 is a magic number and and is the number of emojis in the 13.1 emoji-test.txt (fully-qualified + component)
