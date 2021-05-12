@@ -2,18 +2,21 @@ package emoji
 
 import (
 	"bufio"
+	_ "embed"
 	"errors"
 	"fmt"
 	"log"
 	"math/rand"
-	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // Emoji represents a slice of unicode code points in the "emoji" range
 type Emoji struct {
 	Runes []rune // one or more runes representing a single emoji
+	Name  string // The official name of the emoji, e.g. grinning face
 }
 
 // String converts the Emoji to a string representation
@@ -21,29 +24,45 @@ func (e Emoji) String() string {
 	return string(e.Runes)
 }
 
+type Emojis struct {
+	parseMu sync.Mutex // Sync parsing
+	cache   []Emoji    // In-mem cache of already parsed emojis
+	// TODO: expire cache after some time?
+}
+
+func NewEmojis() *Emojis {
+	return &Emojis{}
+}
+
 var (
+	// ErrInvalidCodePoint denotes that the unicode code point is invalid or un-parsable.
 	ErrInvalidCodePoint = errors.New("invalid unicode code point")
-	ErrFailedDownload   = errors.New("unable to download emojis")
-	url                 = "https://www.unicode.org/Public/emoji/13.1/emoji-sequences.txt"
-	emojiCache          []Emoji
+	// ErrParsingFailed denotes failure to parse the embedded unicode data for some reason.
+	ErrParsingFailed = errors.New("unable to parse unicode emoji data")
+	//go:embed emoji-test.txt
+	unicodeData string
+	// descJunkRe is regexp to remove junk from the emoji description to extract only the name.
+	descJunkRe = regexp.MustCompile(".+ E[0-9]+.[0-9]+ ")
 )
 
-// AllEmojis returns all available emojis in the unicode specification. It will download and parse them from
+// All returns all available emojis in the unicode specification. It will download and parse them from
 // official sources, but will return a cached slice on subsequent calls
-func AllEmojis() (emojis []Emoji, err error) {
-	if len(emojiCache) > 0 {
-		return emojiCache, nil
+func (e *Emojis) All() (emojis []Emoji, err error) {
+	if len(e.cache) > 0 {
+		return e.cache, nil
 	}
 
-	emojis, err = downloadAndParseEmojis(url)
-	emojiCache = emojis
+	e.parseMu.Lock()
+	emojis, err = parseAllEmojis()
+	e.cache = emojis
+	e.parseMu.Unlock()
 
 	return
 }
 
-// RandomEmoji returns a random emoji from all of them. A side-effect is that it will cache all emojis in-mem
-func RandomEmoji() (Emoji, error) {
-	emojis, err := AllEmojis()
+// Random returns a random emoji from the set of all. A side-effect is that it may cache all emojis in-mem
+func (e *Emojis) Random() (Emoji, error) {
+	emojis, err := e.All()
 	if err != nil {
 		return Emoji{}, err
 	}
@@ -53,76 +72,58 @@ func RandomEmoji() (Emoji, error) {
 	return emojis[rndIndex], nil
 }
 
-// downloadAndParseEmojis downloads the unicode sequence list and parses emojis from it.
-func downloadAndParseEmojis(url string) ([]Emoji, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrFailedDownload, err)
-	}
-	defer func() {
-		err := resp.Body.Close()
-		if err != nil {
-			log.Printf("resp.Body.Close(): %v", err)
-		}
-	}()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: got %s, expected 200 OK from %q", ErrFailedDownload, resp.Status, url)
-	}
-
-	// 2191 is a magic number and and is the number of emojis in the 13.1 emoji-sequences.txt
-	allEmojis := make([]Emoji, 0, 2191)
-	scanner := bufio.NewScanner(resp.Body)
+// parseAllEmojis parses the embedded unicode emoji list
+func parseAllEmojis() ([]Emoji, error) {
+	// 3521 is a magic number and and is the number of emojis in the 13.1 emoji-test.txt (fully-qualified + component)
+	allEmojis := make([]Emoji, 0, 3521)
+	scanner := bufio.NewScanner(strings.NewReader(unicodeData))
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "#") || strings.TrimSpace(line) == "" {
 			continue
 		}
-		emojis, err := parseEmoji(line)
+		parsed, emojis, err := parseEmoji(line)
 		if err != nil {
 			log.Println(err)
 
 			continue
+		} else if !parsed {
+			continue
 		}
 
-		allEmojis = append(allEmojis, emojis...)
+		allEmojis = append(allEmojis, emojis)
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("%w: error reading response: %v", ErrFailedDownload, err)
+		return nil, fmt.Errorf("%w: error scanning unicode data: %v", ErrParsingFailed, err)
 	}
 
 	return allEmojis, nil
 }
 
-// parseEmoji takes a line from the unicode sequence list and returns a slice of Emojis
-func parseEmoji(line string) ([]Emoji, error) {
-	endIndex := strings.Index(line, ";")
-	// Represents one or more unicode code points, e.g. 00A9 FE0F or a range: 1F334..1F335
-	codePointRange := strings.TrimSpace(line[:endIndex])
-
-	if !strings.ContainsRune(codePointRange, '.') {
-		runes, err := extractRunes(codePointRange)
-
-		return []Emoji{
-				{
-					Runes: runes,
-				}},
-			err
+// parseEmoji takes a line from the unicode list and returns a slice of Emoji
+func parseEmoji(line string) (bool, Emoji, error) {
+	split := strings.Split(line, ";")
+	if len(split) != 2 {
+		return false, Emoji{}, fmt.Errorf("%w: malformed line: %q", ErrInvalidCodePoint, line)
 	}
 
-	runes, err := expandCodePointRange(codePointRange)
+	desc := strings.TrimSpace(split[1])
+	if !strings.HasPrefix(desc, "fully-qualified") && !strings.HasPrefix(desc, "component") {
+		return false, Emoji{}, nil
+	}
+
+	// Represents one or more unicode code points, e.g. 00A9 FE0F but _NOT_ a range like 1F334..1F335
+	codePoints := strings.TrimSpace(split[0])
+
+	runes, err := extractRunes(codePoints)
 	if err != nil {
-		return nil, err
-	}
-	// In this case each rune is a different emoji
-	emojis := make([]Emoji, len(runes))
-	for i, r := range runes {
-		emojis[i] = Emoji{
-			Runes: []rune{r},
-		}
+		return false, Emoji{}, err
 	}
 
-	return emojis, nil
+	return true, Emoji{
+		Runes: runes,
+		Name:  extractNameFromDescription(desc),
+	}, nil
 }
 
 // extractRunes takes a code point string (e.g 00A9 FE0F, but not 1F334..1F335) and returns them parsed as runes
@@ -145,28 +146,7 @@ func extractRunes(codePoints string) ([]rune, error) {
 	return runes, nil
 }
 
-// expandCodePointRange will take a range like 1F380..1F393 and return all code points as runes between the 'start' and 'end'
-func expandCodePointRange(cpRange string) ([]rune, error) {
-	split := strings.Split(cpRange, "..")
-	if len(split) != 2 {
-		return nil, fmt.Errorf("%w: %q does not look like a code point range", ErrInvalidCodePoint, cpRange)
-	}
-
-	first, err := strconv.ParseInt(split[0], 16, 32)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %q because %v", ErrInvalidCodePoint, split[0], err)
-	}
-	end, err := strconv.ParseInt(split[1], 16, 32)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %q because %v", ErrInvalidCodePoint, split[1], err)
-	}
-
-	runes := make([]rune, 0, 10)
-	current := first
-	for current <= end {
-		runes = append(runes, rune(current))
-		current++
-	}
-
-	return runes, nil
+func extractNameFromDescription(desc string) string {
+	split := descJunkRe.Split(desc, 2)
+	return split[1]
 }

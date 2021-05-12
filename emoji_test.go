@@ -1,7 +1,6 @@
 package emoji
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 )
@@ -35,90 +34,30 @@ func TestEmoji_String(t *testing.T) {
 	}
 }
 
-func Test_expandCodePointRange(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		cpRange string
-		want    []rune
-	}{
-		{
-			name:    "Range with two runes",
-			cpRange: "231A..231B",
-			want:    []rune{'\u231a', '\u231b'},
-		},
-		{
-			name:    "Range with four runes",
-			cpRange: "23E9..23EC",
-			want:    []rune{'\u23e9', '\u23ea', '\u23eb', '\u23ec'},
-		},
-		{
-			name:    "3 byte range",
-			cpRange: "1FAC0..1FAC2",
-			want:    []rune{'\U0001fac0', '\U0001fac1', '\U0001fac2'},
-		},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := expandCodePointRange(tt.cpRange)
-			if err != nil {
-				t.Errorf("expandCodePointRange() got unexpected error = %v", err)
-
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("expandCodePointRange() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_expandCodePointRangeValidation(t *testing.T) {
+func Test_parseAllEmojis(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name       string
-		cpRange    string
-		wantErrMsg string
+		wantLength int
+		wantErr    bool
 	}{
 		{
-			name:       "No range supplied",
-			cpRange:    "23F0",
-			wantErrMsg: "invalid unicode code point: \"23F0\" does not look like a code point range",
-		},
-		{
-			name:       "Faulty start code point",
-			cpRange:    "23G0..",
-			wantErrMsg: "invalid unicode code point: \"23G0\" because strconv.ParseInt: parsing \"23G0\": invalid syntax",
-		},
-		{
-			name:       "Faulty end code point",
-			cpRange:    "23F0..23G0",
-			wantErrMsg: "invalid unicode code point: \"23G0\" because strconv.ParseInt: parsing \"23G0\": invalid syntax",
+			name:       "3521 emojis",
+			wantLength: 3521,
+			wantErr:    false,
 		},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := expandCodePointRange(tt.cpRange)
-			if err == nil {
-				t.Errorf("expandCodePointRange() didn't produce an error when expected")
-
+			got, err := parseAllEmojis()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parseAllEmojis() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if got != nil {
-				t.Errorf("expandCodePointRange() returned a rune slice when not expected: %v", got)
-
-				return
-			}
-
-			if !reflect.DeepEqual(tt.wantErrMsg, err.Error()) {
-				t.Errorf("expandCodePointRange() got = %v, want %v", err, tt.wantErrMsg)
-			}
-			if !errors.Is(err, ErrInvalidCodePoint) {
-				t.Errorf("expandCodePointRange() didn't get expected ErrInvalidCodePoint, got: %v", err)
+			if len(got) != tt.wantLength {
+				t.Errorf("parseAllEmojis() got length = %d, wanted %d", len(got), tt.wantLength)
 			}
 		})
 	}
@@ -201,90 +140,126 @@ func Test_extractRunes(t *testing.T) {
 func Test_parseEmoji(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		line    string
-		want    []Emoji
-		wantErr bool
+		name           string
+		line           string
+		want           Emoji
+		wantErr        bool
+		parseCorrectly bool
 	}{
 		{
 			name: "Basic 2 byte rune",
-			line: "23F0          ; Basic_Emoji                  ; alarm clock                                                    # E0.6   [1] (⏰)",
-			want: []Emoji{
-				{
-					Runes: []rune{'\u23f0'},
-				},
+			line: "23F0                                                   ; fully-qualified     # ⏰ E0.6 alarm clock",
+			want: Emoji{
+				Runes: []rune{'\u23f0'},
+				Name:  "alarm clock",
 			},
-			wantErr: false,
+			wantErr:        false,
+			parseCorrectly: true,
 		},
 		{
-			name: "Basic 2.5 byte rune",
-			line: "1F004         ; Basic_Emoji                  ; mahjong red dragon                                             # E0.6   [1] (🀄)",
-			want: []Emoji{
-				{
-					Runes: []rune{'\U0001f004'},
-				},
+			name:
+			"Basic 2.5 byte rune",
+			line: "1F004                                                  ; fully-qualified     # 🀄 E0.6 mahjong red dragon",
+			want: Emoji{
+				Runes: []rune{'\U0001f004'},
+				Name:  "mahjong red dragon",
 			},
-			wantErr: false,
+			wantErr:        false,
+			parseCorrectly: true,
 		},
 		{
-			name: "Basic 2 byte rune range",
-			line: "23E9..23EC    ; Basic_Emoji                  ; fast-forward button                                            # E0.6   [4] (⏩..⏬)",
-			want: []Emoji{
-				{
-					Runes: []rune{'\u23e9'},
-				},
-				{
-					Runes: []rune{'\u23ea'},
-				},
-				{
-					Runes: []rune{'\u23eb'},
-				},
-				{
-					Runes: []rune{'\u23ec'},
-				},
-			},
-			wantErr: false,
+			name:
+			"Unsupported range",
+			line:           "23E9..23EC    ; fully-qualified     # 🎴 E0.6 flower playing cards",
+			want:           Emoji{},
+			wantErr:        true,
+			parseCorrectly: false,
 		},
 		{
-			name: "2.5 byte rune range",
-			line: "1F4F0..1F4F4  ; Basic_Emoji                  ; newspaper                                                      # E0.6   [5] (📰..📴)",
-			want: []Emoji{
-				{
-					Runes: []rune{'\U0001f4f0'},
-				},
-				{
-					Runes: []rune{'\U0001f4f1'},
-				},
-				{
-					Runes: []rune{'\U0001f4f2'},
-				},
-				{
-					Runes: []rune{'\U0001f4f3'},
-				},
-				{
-					Runes: []rune{'\U0001f4f4'},
-				},
-			},
-			wantErr: false,
+			name:
+			"Unqualified code point",
+			line:           "2666                                                   ; unqualified         # ♦ E0.6 diamond suit",
+			want:           Emoji{},
+			wantErr:        false,
+			parseCorrectly: false,
 		},
 		{
-			name:    "Invalid rune range",
-			line:    "1F4F0..1F4FG  ; Basic_Emoji                  ; newspaper                                                      # E0.6   [5] (📰..📴)",
-			want:    nil,
-			wantErr: true,
+			name:
+			"Minimally qualified code point",
+			line:           "1F9D4 200D 2642                                        ; minimally-qualified # 🧔‍♂ E13.1 man: beard",
+			want:           Emoji{},
+			wantErr:        false,
+			parseCorrectly: false,
+		},
+		{
+			name:
+			"Invalid rune",
+			line:           "1F0CG                                                  ; fully-qualified     # 🃏 E0.6 joker",
+			want:           Emoji{},
+			wantErr:        true,
+			parseCorrectly: false,
+		},
+		{
+			name:
+			"Component code point",
+			line: "1F3FC                                                  ; component           # 🏼 E1.0 medium-light skin tone",
+			want: Emoji{
+				Runes: []rune{'\U0001f3fc'},
+				Name:  "medium-light skin tone",
+			},
+			wantErr:        false,
+			parseCorrectly: true,
 		},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := parseEmoji(tt.line)
+			parsed, got, err := parseEmoji(tt.line)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("parseEmoji() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
+			if tt.parseCorrectly != parsed {
+				t.Errorf("parseEmoji() expected parse: %v, got %v", tt.parseCorrectly, parsed)
+				return
+			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("parseEmoji() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func Test_extractNameFromDescription(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		description string
+		want        string
+	}{
+		{
+			name:        "E13.0",
+			description: " fully-qualified     # \U0001FAC2 E13.0 people hugging",
+			want:        "people hugging",
+		},
+		{
+			name:        "E0.6",
+			description: " fully-qualified     # 🔯 E0.6 dotted six-pointed star",
+			want:        "dotted six-pointed star",
+		},
+		{
+			name:        "E3.0",
+			description: " fully-qualified     # 🤚🏾 E3.0 raised back of hand: medium-dark skin tone",
+			want:        "raised back of hand: medium-dark skin tone",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := extractNameFromDescription(tt.description); got != tt.want {
+				t.Errorf("extractNameFromDescription() = %v, want %v", got, tt.want)
 			}
 		})
 	}
