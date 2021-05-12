@@ -3,11 +3,11 @@ all: lint build test
 
 .PHONY: build
 build:
-	curl -q https://www.unicode.org/Public/emoji/13.1/emoji-test.txt > emoji-test.txt
-# Remove comments and blank lines to save space
-	sed -i -e '/^[ \t]*#/d' emoji-test.txt
-	sed -i -e '/^$$/d' emoji-test.txt
-	go build ./...
+	curl --silent https://www.unicode.org/Public/emoji/13.1/emoji-test.txt --output emoji-test.txt
+# Remove comments and blank lines to save space (requires gnu-sed)
+	sed '/^[ \t]*#/d' -i emoji-test.txt
+	sed '/^$$/d' -i emoji-test.txt
+	go build -v ./...
 
 .PHONY: test
 test:

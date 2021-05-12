@@ -8,7 +8,7 @@ A simple Go package that allows you to list all available emojis in the unicode 
 
 ## Building & Running
 
-A simple `make build` will do. Note that this requires `make`, `curl`, and `sed` to work properly.
+A simple `make build` will do. Note that this requires `make`, `curl`, and `gnu-sed` to work properly.
 Running this will also download the required unicode code points from unicode.org (requires an internet connection)
 
 As for running you can run an example in the `examples` directory:
