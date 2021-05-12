@@ -16,7 +16,6 @@ func main() {
 			continue
 		}
 
-		fmt.Println(query)
 		if query == "q" {
 			return
 		}
